@@ -54,14 +54,18 @@ curl -X POST http://localhost:8080/login \
 {"token":"admin_token_143025","message":"Login successful"}
 ```
 
-Hit it repeatedly to see rate limiting kick in:
+### Brute Force Test
+
+Run the test script to simulate attacks and verify rate limiting:
 
 ```bash
-for i in $(seq 1 15); do
-  curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:8080/login \
-    -H "Content-Type: application/json" \
-    -d '{"username": "admin", "password": "1234"}'
-done
+bash test_ratelimit.sh
 ```
 
-After 10 requests you'll get `429 Too Many Requests`.
+This runs three tests:
+1. **Per-IP** — 15 concurrent requests from the same IP (blocked after 10)
+2. **Password guessing** — tries common passwords against `admin`
+3. **Burst** — 30 concurrent requests to stress the global limiter
+
+Requests that exceed the limit get `429 Too Many Requests`.
+
