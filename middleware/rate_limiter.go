@@ -9,10 +9,10 @@ import (
 	"login-rate-limiter/limiter"
 )
 
-// Per-IP limiter
+
 var ipLimiters = make(map[string]*limiter.SlidingWindow)
 
-// Per-user limiter
+
 var userLimiters = make(map[string]*limiter.SlidingWindow)
 
 var mu sync.Mutex
@@ -26,7 +26,6 @@ func getIP(r *http.Request) string {
 }
 
 func getUser(r *http.Request) string {
-	// Example: from header (replace with JWT in real app)
 	user := r.Header.Get("X-User-ID")
 	if user == "" {
 		return "anonymous"
@@ -42,7 +41,7 @@ func getIPLimiter(ip string) *limiter.SlidingWindow {
 		return l
 	}
 
-	// 10 requests per 10 seconds per IP
+
 	l := limiter.NewSlidingWindow(10*time.Second, 10)
 	ipLimiters[ip] = l
 	return l
@@ -56,7 +55,7 @@ func getUserLimiter(user string) *limiter.SlidingWindow {
 		return l
 	}
 
-	// 20 requests per 10 seconds per user
+	
 	l := limiter.NewSlidingWindow(10*time.Second, 20)
 	userLimiters[user] = l
 	return l
