@@ -3,22 +3,13 @@ package middleware
 import (
 	"net"
 	"net/http"
-	"sync"
 	"time"
 
 	"login-rate-limiter/limiter"
 )
 
-
-var ipLimiters = make(map[string]*limiter.SlidingWindow)
-
-
-var userLimiters = make(map[string]*limiter.SlidingWindow)
-
-var mu sync.Mutex
-
-// Global limiter
-var globalLimiter = limiter.NewTokenBucket(100, 50) // 100 burst, 50 req/sec
+// Global limiter: 100 burst, 50 req/sec
+var globalLimiter = limiter.NewTokenBucket("ratelimit:global", 100, 50)
 
 func getIP(r *http.Request) string {
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
@@ -33,38 +24,10 @@ func getUser(r *http.Request) string {
 	return user
 }
 
-func getIPLimiter(ip string) *limiter.SlidingWindow {
-	mu.Lock()
-	defer mu.Unlock()
-
-	if l, exists := ipLimiters[ip]; exists {
-		return l
-	}
-
-
-	l := limiter.NewSlidingWindow(10*time.Second, 10)
-	ipLimiters[ip] = l
-	return l
-}
-
-func getUserLimiter(user string) *limiter.SlidingWindow {
-	mu.Lock()
-	defer mu.Unlock()
-
-	if l, exists := userLimiters[user]; exists {
-		return l
-	}
-
-	
-	l := limiter.NewSlidingWindow(10*time.Second, 20)
-	userLimiters[user] = l
-	return l
-}
-
 func RateLimiter(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-		// 1️⃣ Global protection
+		// 1. Global protection
 		if !globalLimiter.Allow() {
 			http.Error(w, "Global rate limit exceeded", http.StatusTooManyRequests)
 			return
@@ -73,14 +36,16 @@ func RateLimiter(next http.Handler) http.Handler {
 		ip := getIP(r)
 		user := getUser(r)
 
-		// 2️⃣ Per-IP
-		if !getIPLimiter(ip).Allow() {
+		// 2. Per-IP: 10 requests per 10 seconds
+		ipLimiter := limiter.NewSlidingWindow("ratelimit:ip:"+ip, 10*time.Second, 10)
+		if !ipLimiter.Allow() {
 			http.Error(w, "Too many requests from this IP", http.StatusTooManyRequests)
 			return
 		}
 
-		// 3️⃣ Per-user
-		if !getUserLimiter(user).Allow() {
+		// 3. Per-user: 20 requests per 10 seconds
+		userLimiter := limiter.NewSlidingWindow("ratelimit:user:"+user, 10*time.Second, 20)
+		if !userLimiter.Allow() {
 			http.Error(w, "User rate limit exceeded", http.StatusTooManyRequests)
 			return
 		}

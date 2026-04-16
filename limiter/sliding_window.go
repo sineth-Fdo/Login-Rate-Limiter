@@ -1,45 +1,65 @@
 package limiter
 
 import (
-	"sync"
+	"context"
 	"time"
+
+	"login-rate-limiter/store"
+
+	"github.com/redis/go-redis/v9"
 )
 
+// Lua script for atomic sliding window operation in Redis
+var slidingWindowScript = redis.NewScript(`
+local key = KEYS[1]
+local window_ms = tonumber(ARGV[1])
+local max_req = tonumber(ARGV[2])
+local now = tonumber(ARGV[3])
+
+local cutoff = now - window_ms
+
+-- Remove expired entries
+redis.call('ZREMRANGEBYSCORE', key, '-inf', cutoff)
+
+-- Count current requests in window
+local count = redis.call('ZCARD', key)
+
+if count >= max_req then
+    return 0
+end
+
+-- Add current request
+redis.call('ZADD', key, now, now .. '-' .. math.random(1000000))
+redis.call('PEXPIRE', key, window_ms)
+return 1
+`)
+
 type SlidingWindow struct {
+	key        string
 	windowSize time.Duration
 	maxReq     int
-	requests   []time.Time
-	mu         sync.Mutex
 }
 
-func NewSlidingWindow(windowSize time.Duration, maxReq int) *SlidingWindow {
+func NewSlidingWindow(key string, windowSize time.Duration, maxReq int) *SlidingWindow {
 	return &SlidingWindow{
+		key:        key,
 		windowSize: windowSize,
 		maxReq:     maxReq,
-		requests:   []time.Time{},
 	}
 }
 
 func (sw *SlidingWindow) Allow() bool {
-	sw.mu.Lock()
-	defer sw.mu.Unlock()
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
 
-	now := time.Now()
-	cutoff := now.Add(-sw.windowSize)
+	result, err := slidingWindowScript.Run(ctx, store.Client,
+		[]string{sw.key},
+		sw.windowSize.Milliseconds(), sw.maxReq, now,
+	).Int()
 
-	// Remove old requests
-	valid := []time.Time{}
-	for _, t := range sw.requests {
-		if t.After(cutoff) {
-			valid = append(valid, t)
-		}
-	}
-	sw.requests = valid
-
-	if len(sw.requests) >= sw.maxReq {
+	if err != nil {
 		return false
 	}
 
-	sw.requests = append(sw.requests, now)
-	return true
+	return result == 1
 }

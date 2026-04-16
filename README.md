@@ -1,6 +1,6 @@
 # Login Rate Limiter
 
-A Go HTTP server with multi-layer rate limiting on a login endpoint. Built with the standard library only.
+A Go HTTP server with multi-layer rate limiting on a login endpoint, backed by Redis.
 
 ## Rate Limiting Strategy
 
@@ -12,13 +12,35 @@ Requests pass through three layers before reaching the handler:
 | Per-IP   | Sliding Window | 10 requests / 10s     |
 | Per-User | Sliding Window | 20 requests / 10s     |
 
-## Run
+All rate limit state is stored in Redis using atomic Lua scripts.
+
+## Run with Docker
+
+```bash
+docker compose up --build
+```
+
+This starts both Redis and the app. Server runs on `http://localhost:8080`.
+
+## Run Locally
+
+Start Redis first:
+
+```bash
+docker run -d -p 6379:6379 --name ratelimiter-redis redis
+```
+
+Then run the app:
 
 ```bash
 go run .
 ```
 
-Server starts on `http://localhost:8080`.
+To use a custom Redis address:
+
+```bash
+REDIS_ADDR=localhost:6379 go run .
+```
 
 ## Test
 
